@@ -6,14 +6,28 @@ export function EventHoverCard({ event, position, onClose, onEdit, onDelete }) {
   const cardRef = useRef(null);
   const [adjustedPosition, setAdjustedPosition] = useState(position);
 
-useEffect(() => {
+  useEffect(() => {
     if (cardRef.current) {
       const rect = cardRef.current.getBoundingClientRect();
-      
-      // Bottom right corner of card should be 20px left and 20px up from cursor
-      // So card top-left = cursor - cardWidth - 20, cursor - cardHeight - 20
-      const newX = position.x - 1;
-      const newY = position.y - 1;
+
+      let newX = position.x;
+      let newY = position.y;
+
+      // Keep within viewport horizontally
+      if (newX + rect.width > window.innerWidth - 10) {
+        newX = window.innerWidth - rect.width - 10;
+      }
+      if (newX < 10) {
+        newX = 10;
+      }
+
+      // And vertically
+      if (newY + rect.height > window.innerHeight - 10) {
+        newY = window.innerHeight - rect.height - 10;
+      }
+      if (newY < 10) {
+        newY = 10;
+      }
 
       setAdjustedPosition({ x: newX, y: newY });
     }

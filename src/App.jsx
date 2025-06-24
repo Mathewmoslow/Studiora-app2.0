@@ -253,42 +253,33 @@ function App() {
   // Add hover handlers
   const handleEventMouseEnter = (info) => {
     const rect = info.el.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
     const cardWidth = 320;
-    const cardHeight = 400; // Approximate max height
-    
-    // Determine best position
-    let x, y;
-    const isRightHalf = rect.left > viewportWidth * 0.4; // Trigger earlier for more space
-    
-    if (isRightHalf) {
-      // Far left of the event
-      x = Math.max(10, rect.left - cardWidth - 150);
-    } else {
-      // Right of the event
-      x = rect.right + 30;
+    const cardHeight = 380; // Estimated height
+    const padding = 10;
+
+    // Default to right of the event
+    let x = rect.right + padding;
+    // If card would overflow right edge, position to the left
+    if (x + cardWidth > window.innerWidth - padding) {
+      x = rect.left - cardWidth - padding;
     }
-    
-    // Vertical positioning - prefer above/below if horizontal space is tight
-    y = rect.top;
-    
-    // If card would go off bottom, position above
-    if (y + cardHeight > viewportHeight - 20) {
-      y = Math.max(20, rect.bottom - cardHeight);
+    // Clamp within viewport
+    x = Math.max(padding, Math.min(x, window.innerWidth - cardWidth - padding));
+
+    // Vertically center relative to the event element
+    let y = rect.top + rect.height / 2 - cardHeight / 2;
+    if (y + cardHeight > window.innerHeight - padding) {
+      y = window.innerHeight - cardHeight - padding;
     }
-    
-    // If still issues, position below the event
-    if (isRightHalf && x < 10) {
-      x = Math.max(10, rect.left - 50);
-      y = rect.bottom + 20;
+    if (y < padding) {
+      y = padding;
     }
-    
+
     info.el.setAttribute('data-event-id', info.event.id);
-    
+
     showHoverCard(info.event, {
-      x: x,
-      y: y
+      x,
+      y,
     });
   };
 
