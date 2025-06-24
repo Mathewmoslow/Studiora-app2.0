@@ -3,17 +3,17 @@ import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
-import { Calendar, Plus, Settings, BookOpen, Edit2, Trash2 } from 'lucide-react'
+import { Calendar, Plus, Settings, BookOpen, Edit2, Trash2, Brain, FileText } from 'lucide-react'
 import { format } from 'date-fns'
 import CourseModal from './components/CourseModal'
 import AssignmentModal from './components/AssignmentModal'
 import AssignmentDetails from './components/AssignmentDetails'
 import DataManager from './utils/DataManager'
 import SettingsModal from './components/SettingsModal'
-import StudySchedulerPanel from './components/StudySchedulerPanel'
-import { FileText } from 'lucide-react'
+import StudySchedulerModal from './components/StudySchedulerModal'
 import ParserModal from './components/ParserModal'
 import { EventHoverCard, useEventHover, HoverCardStyles } from './components/EventHoverCard'
+import NotificationService from './services/NotificationService'
 
 function App() {
   const [assignments, setAssignments] = useState([])
@@ -28,8 +28,32 @@ function App() {
   const [showAssignmentDetails, setShowAssignmentDetails] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [studyBlocks, setStudyBlocks] = useState([])
-  const [showScheduler, setShowScheduler] = useState(true)
+  const [showSchedulerModal, setShowSchedulerModal] = useState(false)
   const [showParserModal, setShowParserModal] = useState(false)
+  const [notificationService] = useState(() => new NotificationService())
+  
+  // Dark mode state
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem('darkMode');
+    return saved ? saved === 'true' : true; // Default to dark
+  });
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Toggle dark mode
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+    localStorage.setItem('darkMode', darkMode.toString());
+  }, [darkMode]);
+
+  // Initialize notifications
+  useEffect(() => {
+    notificationService.requestPermission();
+  }, []);
+
+  // Update notifications when data changes
+  useEffect(() => {
+    notificationService.updateAllNotifications(assignments, studyBlocks);
+  }, [assignments, studyBlocks]);
   
   // Add hover management
   const { hoverCard, showHoverCard, hideHoverCard, clearHoverCard } = useEventHover();
@@ -144,6 +168,7 @@ function App() {
         date: assignment.date,
         backgroundColor: course?.color || '#6b7280',
         borderColor: course?.color || '#6b7280',
+        className: assignment.completed ? 'completed' : '',
         extendedProps: {
           type: assignment.type,
           hours: assignment.hours,
@@ -152,7 +177,8 @@ function App() {
           priority: assignment.priority || 'medium',
           isAssignment: true,
           description: assignment.description,
-          assignmentTitle: assignment.title // Added for study blocks
+          assignmentTitle: assignment.title,
+          completed: assignment.completed
         }
       }
     }),
@@ -171,8 +197,6 @@ function App() {
       };
     })
   ]
-
-  // Fixed schedule events (removed as they're not referenced elsewhere)
 
   // Handle course save
   const handleCourseSave = (courseData) => {
@@ -200,6 +224,16 @@ function App() {
     }
   }
 
+  // Handle assignment completion toggle
+  const handleAssignmentComplete = (assignmentId) => {
+    setAssignments(assignments.map(a => 
+      a.id === assignmentId 
+        ? { ...a, completed: !a.completed, completedAt: !a.completed ? new Date().toISOString() : null }
+        : a
+    ));
+    setCalendarKey(prev => prev + 1);
+  };
+
   // Enhanced event click handler
   const handleEventClick = (info) => {
     clearHoverCard(); // Clear hover on click
@@ -215,9 +249,42 @@ function App() {
   // Add hover handlers
   const handleEventMouseEnter = (info) => {
     const rect = info.el.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const cardWidth = 320;
+    const cardHeight = 400; // Approximate max height
+    
+    // Determine best position
+    let x, y;
+    const isRightHalf = rect.left > viewportWidth * 0.4; // Trigger earlier for more space
+    
+    if (isRightHalf) {
+      // Far left of the event
+      x = Math.max(10, rect.left - cardWidth - 150);
+    } else {
+      // Right of the event
+      x = rect.right + 30;
+    }
+    
+    // Vertical positioning - prefer above/below if horizontal space is tight
+    y = rect.top;
+    
+    // If card would go off bottom, position above
+    if (y + cardHeight > viewportHeight - 20) {
+      y = Math.max(20, rect.bottom - cardHeight);
+    }
+    
+    // If still issues, position below the event
+    if (isRightHalf && x < 10) {
+      x = Math.max(10, rect.left - 50);
+      y = rect.bottom + 20;
+    }
+    
+    info.el.setAttribute('data-event-id', info.event.id);
+    
     showHoverCard(info.event, {
-      x: rect.right + 10,
-      y: rect.top
+      x: x,
+      y: y
     });
   };
 
@@ -357,11 +424,23 @@ function App() {
       {/* Header */}
       <header className="app-header">
         <div className="header-content">
+          <button className="menu-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
+            ☰
+          </button>
           <div className="app-title">
-            <BookOpen size={24} />
-            Studiora Calendar
+            <BookOpen size={20} />
+            <span>Studiora</span>
           </div>
           <div className="header-actions">
+            <button
+              className="btn"
+              onClick={() => setShowSchedulerModal(true)}
+              disabled={assignments.length === 0}
+              title={assignments.length === 0 ? 'Add assignments first' : 'Generate study schedule'}
+            >
+              <Brain size={16} />
+              <span>Study Plan</span>
+            </button>
             <button
               className="btn"
               onClick={() => setShowParserModal(true)}
@@ -369,14 +448,7 @@ function App() {
               title={courses.length === 0 ? 'Create a course first' : 'Import syllabus'}
             >
               <FileText size={16} />
-              Import Syllabus
-            </button>
-            <button
-              className="btn"
-              onClick={() => setShowSettingsModal(true)}
-            >
-              <Settings size={16} />
-              Settings
+              <span>Import</span>
             </button>
             <button
               className="btn"
@@ -387,161 +459,155 @@ function App() {
               disabled={courses.length === 0}
             >
               <Plus size={16} />
-              Add Assignment
+              <span>Assignment</span>
             </button>
             <button
-              className="btn btn-primary"
-              onClick={() => {
-                setEditingCourse(null)
-                setShowCourseModal(true)
-              }}
+              className="theme-toggle"
+              onClick={() => setDarkMode(!darkMode)}
+              title={darkMode ? 'Light mode' : 'Dark mode'}
             >
-              <Plus size={16} />
-              Add Course
+              {darkMode ? '☀️' : '🌙'}
+            </button>
+            <button
+              className="btn-icon"
+              onClick={() => setShowSettingsModal(true)}
+            >
+              <Settings size={16} />
             </button>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="main-content">
-        {/* Course Selector */}
-        <div className="course-selector">
-          <label>View Course:</label>
-          <select
-            value={selectedCourse}
-            onChange={(e) => setSelectedCourse(e.target.value)}
-            className="course-select"
-          >
-            <option value="all">All Courses</option>
-            {courses.map(course => (
-              <option key={course.id} value={course.id}>
-                {course.code} - {course.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Course List */}
-        {courses.length > 0 && (
-          <div className="course-list">
-            <h3>Your Courses</h3>
-            <div className="course-grid">
-              {courses.map(course => (
-                <div key={course.id} className="course-card" style={{ borderColor: course.color }}>
-                  <div className="course-header">
+      <div className="main-layout">
+        {/* Sidebar */}
+        <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+          <div className="sidebar-content">
+            <div className="sidebar-section">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h3>My Courses</h3>
+                <button
+                  className="btn-icon"
+                  onClick={() => {
+                    setEditingCourse(null)
+                    setShowCourseModal(true)
+                  }}
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+              <div className="course-list-sidebar">
+                <div 
+                  className={`course-item ${selectedCourse === 'all' ? 'active' : ''}`}
+                  onClick={() => setSelectedCourse('all')}
+                >
+                  <div className="course-item-header">
+                    <div className="course-color-dot" style={{ backgroundColor: '#6b7280' }} />
                     <div>
-                      <h4>{course.code}</h4>
-                      <p>{course.name}</p>
-                      {course.instructor && <p className="course-meta">Instructor: {course.instructor}</p>}
-                      {course.credits && <p className="course-meta">{course.credits} credits</p>}
+                      <div className="course-item-title">All Courses</div>
+                      <div className="course-item-subtitle">View everything</div>
                     </div>
-                    <div className="course-color" style={{ backgroundColor: course.color }} />
                   </div>
-                  <div className="course-actions">
-                    <button
-                      className="btn-icon"
-                      onClick={() => {
-                        setEditingCourse(course)
-                        setShowCourseModal(true)
-                      }}
-                    >
-                      <Edit2 size={16} />
-                    </button>
-                    <button
-                      className="btn-icon btn-icon-danger"
-                      onClick={() => handleCourseDelete(course.id)}
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                  <div className="course-item-stats">
+                    <span>{assignments.length} tasks</span>
                   </div>
                 </div>
-              ))}
+                {courses.map(course => {
+                  const courseAssignments = assignments.filter(a => a.courseId === course.id);
+                  return (
+                    <div 
+                      key={course.id} 
+                      className={`course-item ${selectedCourse === course.id ? 'active' : ''}`}
+                      onClick={() => setSelectedCourse(course.id)}
+                    >
+                      <div className="course-item-header">
+                        <div className="course-color-dot" style={{ backgroundColor: course.color }} />
+                        <div>
+                          <div className="course-item-title">{course.code}</div>
+                          <div className="course-item-subtitle">{course.name}</div>
+                        </div>
+                      </div>
+                      <div className="course-item-stats">
+                        <span>{courseAssignments.length} tasks</span>
+                        <span>{course.credits} credits</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        )}
+        </aside>
 
-        {/* Stats */}
-        <div className="stats-section">
-          <div className="stat-card">
-            <div className="stat-value">{stats.totalAssignments}</div>
-            <div className="stat-label">
-              {selectedCourse === 'all' ? 'Total' : 'Course'} Assignments
+        {/* Sidebar overlay for mobile */}
+        <div 
+          className={`sidebar-overlay ${sidebarOpen ? 'active' : ''}`}
+          onClick={() => setSidebarOpen(false)}
+        />
+
+        {/* Main Content */}
+        <main className="main-content">
+          {/* Stats Bar */}
+          <div className="stats-bar">
+            <div className="stat-chip">
+              <span className="stat-chip-value">{stats.totalAssignments}</span>
+              <span className="stat-chip-label">Total</span>
+            </div>
+            <div className="stat-chip">
+              <span className="stat-chip-value">{stats.completedAssignments}</span>
+              <span className="stat-chip-label">Completed</span>
+            </div>
+            <div className="stat-chip">
+              <span className="stat-chip-value">{stats.upcomingWeek}</span>
+              <span className="stat-chip-label">This Week</span>
+            </div>
+            <div className="stat-chip">
+              <span className="stat-chip-value">{stats.totalHours}h</span>
+              <span className="stat-chip-label">Est. Hours</span>
+            </div>
+            <div className="stat-chip">
+              <span className="stat-chip-value">{stats.studyHours.toFixed(1)}h</span>
+              <span className="stat-chip-label">Scheduled</span>
             </div>
           </div>
-          <div className="stat-card">
-            <div className="stat-value">{stats.completedAssignments}</div>
-            <div className="stat-label">Completed</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{stats.upcomingWeek}</div>
-            <div className="stat-label">Due This Week</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{stats.totalHours}h</div>
-            <div className="stat-label">Assignment Hours</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{stats.studyHours.toFixed(1)}h</div>
-            <div className="stat-label">Study Scheduled</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{stats.courses}</div>
-            <div className="stat-label">Active Courses</div>
-          </div>
-        </div>
 
-        {/* Study Scheduler */}
-        {showScheduler && assignments.length > 0 && (
-          <StudySchedulerPanel
-            assignments={filteredAssignments}
-            courses={courses}
-            calendarEvents={calendarEvents.filter(e => e.extendedProps?.type !== 'study' && e.extendedProps?.type !== 'review')}
-            onScheduleGenerated={handleScheduleGenerated}
-          />
-        )}
-
-        {/* Calendar */}
-        <div className="calendar-wrapper">
-          <div className="calendar-header">
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '600' }}>
-              {selectedCourse === 'all' ? 'All Courses' : courses.find(c => c.id === selectedCourse)?.name || 'Course'} Calendar
-            </h2>
-            <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-              Hover over events for details • Click to view/edit • Black blocks are study time
+          {/* Calendar */}
+          <div className="calendar-wrapper">
+            <div className="calendar-header">
+              <h2>{selectedCourse === 'all' ? 'All Courses' : courses.find(c => c.id === selectedCourse)?.name || 'Course'} Calendar</h2>
+              <p>Hover over events for details • Click to view/edit • Black blocks are study time</p>
+            </div>
+            <div className="calendar-container">
+              <FullCalendar
+                key={calendarKey}
+                plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+                initialView="dayGridMonth"
+                headerToolbar={{
+                  left: 'prev,next today',
+                  center: 'title',
+                  right: 'dayGridMonth,timeGridWeek,timeGridDay'
+                }}
+                events={calendarEvents}
+                eventClick={handleEventClick}
+                eventMouseEnter={handleEventMouseEnter}
+                eventMouseLeave={handleEventMouseLeave}
+                dateClick={handleDateClick}
+                editable={true}
+                selectable={true}
+                selectMirror={true}
+                dayMaxEvents={3}
+                weekends={true}
+                height="100%"
+                eventClassNames={(arg) => {
+                  const type = arg.event.extendedProps.type;
+                  if (type === 'study') return 'study-block';
+                  if (type === 'review') return 'review-block';
+                  return `event-${type}`;
+                }}
+              />
             </div>
           </div>
-          <div className="calendar-container">
-            <FullCalendar
-              key={calendarKey}
-              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-              initialView="dayGridMonth"
-              headerToolbar={{
-                left: 'prev,next today',
-                center: 'title',
-                right: 'dayGridMonth,timeGridWeek,timeGridDay'
-              }}
-              events={calendarEvents}
-              eventClick={handleEventClick}
-              eventMouseEnter={handleEventMouseEnter}
-              eventMouseLeave={handleEventMouseLeave}
-              dateClick={handleDateClick}
-              editable={true}
-              selectable={true}
-              selectMirror={true}
-              dayMaxEvents={3}
-              weekends={true}
-              height="100%"
-              eventClassNames={(arg) => {
-                const type = arg.event.extendedProps.type;
-                if (type === 'study') return 'study-block';
-                if (type === 'review') return 'review-block';
-                return `event-${type}`;
-              }}
-            />
-          </div>
-        </div>
-      </main>
+        </main>
+      </div>
 
       {/* Render hover card */}
       {hoverCard && (
@@ -551,15 +617,28 @@ function App() {
           onClose={clearHoverCard}
           onEdit={(event) => {
             clearHoverCard();
-            const assignment = assignments.find(a => a.id === event.id);
-            setEditingAssignment(assignment);
-            setShowAssignmentModal(true);
+            if (event.extendedProps.isAssignment) {
+              const assignment = assignments.find(a => a.id === event.id);
+              setEditingAssignment(assignment);
+              setShowAssignmentModal(true);
+            } else if (event.extendedProps.type === 'study' || event.extendedProps.type === 'review') {
+              // For study blocks, we need to regenerate the schedule
+              if (confirm('Editing study blocks requires regenerating the schedule. Continue?')) {
+                setStudyBlocks([]);
+              }
+            }
           }}
           onDelete={(id) => {
             clearHoverCard();
-            const assignment = assignments.find(a => a.id === id);
-            setSelectedAssignment(assignment);
-            handleAssignmentDelete();
+            if (assignments.find(a => a.id === id)) {
+              const assignment = assignments.find(a => a.id === id);
+              setSelectedAssignment(assignment);
+              handleAssignmentDelete();
+            } else {
+              // Delete study block
+              setStudyBlocks(studyBlocks.filter(block => block.id !== id));
+              setCalendarKey(prev => prev + 1);
+            }
           }}
         />
       )}
@@ -598,6 +677,7 @@ function App() {
         course={courses.find(c => c.id === selectedAssignment?.courseId)}
         onEdit={handleAssignmentEdit}
         onDelete={handleAssignmentDelete}
+        onComplete={handleAssignmentComplete}
       />
 
       {/* Settings Modal */}
@@ -606,6 +686,16 @@ function App() {
         onClose={() => setShowSettingsModal(false)}
         onImport={handleDataImport}
         onClearData={handleClearData}
+      />
+
+      {/* Study Scheduler Modal */}
+      <StudySchedulerModal
+        isOpen={showSchedulerModal}
+        onClose={() => setShowSchedulerModal(false)}
+        assignments={filteredAssignments}
+        courses={courses}
+        calendarEvents={calendarEvents.filter(e => e.extendedProps?.type !== 'study' && e.extendedProps?.type !== 'review')}
+        onScheduleGenerated={handleScheduleGenerated}
       />
 
       {/* Parser Modal */}

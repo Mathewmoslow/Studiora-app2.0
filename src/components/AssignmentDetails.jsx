@@ -1,8 +1,8 @@
 import React from 'react';
-import { X, Calendar, Clock, BookOpen, Edit2, Trash2 } from 'lucide-react';
+import { X, Calendar, Clock, BookOpen, Edit2, Trash2, CheckCircle } from 'lucide-react';
 import { format } from 'date-fns';
 
-function AssignmentDetails({ isOpen, onClose, assignment, course, onEdit, onDelete }) {
+function AssignmentDetails({ isOpen, onClose, assignment, course, onEdit, onDelete, onComplete }) {
   if (!isOpen || !assignment) return null;
 
   const typeIcons = {
@@ -36,6 +36,17 @@ function AssignmentDetails({ isOpen, onClose, assignment, course, onEdit, onDele
 
         <div className="assignment-details-body">
           <div className="detail-section">
+            <div className="detail-row">
+              <span className="detail-label">Status:</span>
+              <button 
+                className={`completion-toggle ${assignment.completed ? 'completed' : ''}`}
+                onClick={() => onComplete(assignment.id)}
+              >
+                <CheckCircle size={16} />
+                {assignment.completed ? 'Completed' : 'Mark Complete'}
+              </button>
+            </div>
+
             <div className="detail-row">
               <span className="detail-label">Course:</span>
               <span className="detail-value" style={{ color: course?.color }}>
@@ -86,6 +97,15 @@ function AssignmentDetails({ isOpen, onClose, assignment, course, onEdit, onDele
                 {assignment.priority.charAt(0).toUpperCase() + assignment.priority.slice(1)}
               </span>
             </div>
+
+            {assignment.completedAt && (
+              <div className="detail-row">
+                <span className="detail-label">Completed:</span>
+                <span className="detail-value">
+                  {format(new Date(assignment.completedAt), 'MMM d, yyyy h:mm a')}
+                </span>
+              </div>
+            )}
           </div>
 
           {assignment.description && (
