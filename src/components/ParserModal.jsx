@@ -1,6 +1,41 @@
 import React, { useState } from 'react';
 import { X, Brain, Loader, AlertCircle, CheckCircle } from 'lucide-react';
 
+// Helper to safely parse JSON that may be wrapped in markdown fences or extra text
+const parseJSONSafe = (text) => {
+  if (!text) return null;
+  try {
+    // Remove Markdown fences and trim
+    const cleaned = text
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/```$/i, '')
+      .trim();
+
+    // Locate the first opening brace/bracket and the last closing one
+    const firstBrace = cleaned.indexOf('{');
+    const firstBracket = cleaned.indexOf('[');
+    let start = -1;
+    if (firstBrace === -1) {
+      start = firstBracket;
+    } else if (firstBracket === -1) {
+      start = firstBrace;
+    } else {
+      start = Math.min(firstBrace, firstBracket);
+    }
+    const lastBrace = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
+
+    if (start !== -1 && lastBrace !== -1) {
+      const jsonString = cleaned.substring(start, lastBrace + 1);
+      return JSON.parse(jsonString);
+    }
+    // Fallback to parsing the whole string
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.error('[Parser] JSON parse error:', err);
+    return null;
+  }
+};
+
 function ParserModal({ isOpen, onClose, onComplete, courses }) {
   const [inputText, setInputText] = useState('');
   const [selectedCourse, setSelectedCourse] = useState(courses[0]?.id || '');
@@ -8,6 +43,7 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
   const [error, setError] = useState('');
   const [progress, setProgress] = useState([]);
   const [parsedAssignments, setParsedAssignments] = useState([]);
+  const [suggestions, setSuggestions] = useState('');
   const [step, setStep] = useState(1);
   
   const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
@@ -30,20 +66,28 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
     // Pattern for dates
     const datePattern = /(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?/gi;
     
-    // Pattern for assignment keywords
-    const assignmentPattern = /(?:assignment|homework|quiz|test|exam|project|paper|essay|lab|discussion|reading|chapter|module|week\s*\d+|presentation|midterm|final)/gi;
+    // Pattern for assignment keywords including lectures and clinicals
+    const assignmentPattern = /(?:assignment|homework|quiz|test|exam|project|paper|essay|lab|discussion|reading|chapter|module|week\s*\d+|presentation|midterm|final|lecture|class|clinical)/gi;
+
+    // Time pattern (e.g., 9am, 09:30 PM)
+    const timePattern = /\b\d{1,2}(?::\d{2})?\s?(?:AM|PM|am|pm)\b/;
     
     const lines = text.split('\n');
     
     lines.forEach((line, index) => {
       if (assignmentPattern.test(line)) {
         const dates = line.match(datePattern);
+        const timeMatch = line.match(timePattern);
         const title = line.trim().substring(0, 100);
         
         if (title.length > 10) {
+          const { date, time } = dates
+            ? parseDateTime(dates[0], timeMatch ? timeMatch[0] : null)
+            : { date: null, time: null };
           const assignment = {
             title: title,
-            date: dates ? parseDate(dates[0]) : null,
+            date,
+            time,
             type: detectAssignmentType(line),
             hours: estimateHours(line),
             description: ''
@@ -60,21 +104,31 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
     return assignments;
   };
 
-  const parseDate = (dateStr) => {
-    const date = new Date(dateStr);
-    if (!isNaN(date.getTime())) {
-      return date.toISOString().split('T')[0];
-    }
-    
-    // Try to parse current year
-    const currentYear = new Date().getFullYear();
-    const dateWithYear = new Date(`${dateStr}, ${currentYear}`);
-    if (!isNaN(dateWithYear.getTime())) {
-      return dateWithYear.toISOString().split('T')[0];
-    }
-    
-    return null;
+  const formatTime = (date) => {
+    return date.toTimeString().slice(0, 5);
   };
+
+  const parseDateTime = (dateStr, timeStr = null) => {
+    const dateTime = timeStr ? `${dateStr} ${timeStr}` : dateStr;
+    let d = new Date(dateTime);
+    if (isNaN(d.getTime())) {
+      const currentYear = new Date().getFullYear();
+      d = new Date(`${dateTime} ${currentYear}`);
+    }
+    if (isNaN(d.getTime())) {
+      return { date: null, time: null };
+    }
+    return {
+      date: d.toISOString().split('T')[0],
+      time: timeStr ? formatTime(d) : null,
+    };
+  };
+
+  const normalizeAssignments = (list) =>
+    list.map((a) => {
+      const { date, time } = parseDateTime(a.date || '', a.time || '');
+      return { ...a, date, time };
+    });
 
   const detectAssignmentType = (text) => {
     const lower = text.toLowerCase();
@@ -84,6 +138,8 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
     if (lower.includes('paper') || lower.includes('essay')) return 'paper';
     if (lower.includes('discussion')) return 'discussion';
     if (lower.includes('lab')) return 'lab';
+    if (lower.includes('clinical')) return 'clinical';
+    if (lower.includes('lecture') || lower.includes('class')) return 'lecture';
     if (lower.includes('presentation')) return 'presentation';
     if (lower.includes('reading') || lower.includes('chapter')) return 'reading';
     return 'assignment';
@@ -94,6 +150,8 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
     if (lower.includes('exam') || lower.includes('midterm') || lower.includes('final')) return 3;
     if (lower.includes('quiz')) return 1;
     if (lower.includes('project') || lower.includes('paper')) return 5;
+    if (lower.includes('lecture') || lower.includes('class')) return 2;
+    if (lower.includes('clinical')) return 4;
     if (lower.includes('reading') || lower.includes('chapter')) return 2;
     return 2;
   };
@@ -165,7 +223,7 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
       });
       
       const content = data.choices[0].message.content;
-      const parsed = JSON.parse(content);
+      const parsed = parseJSONSafe(content) || { assignments: [], events: [] };
       console.log('[Parser] Studiora extracted assignments:', parsed);
       
       updateProgress('ai', `Studiora found ${parsed.assignments?.length || 0} assignments (Cost: $${actualCost.toFixed(4)})`);
@@ -186,11 +244,62 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
     }
   };
 
+  const verifyWithAI = async (text, currentAssignments) => {
+    if (!apiKey) return { newAssignments: [], suggestions: '' };
+
+    updateProgress('verify', 'Studiora is verifying results...');
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You are a course parser assistant. Given course text and the list of assignments already extracted, identify any additional assignments not in the list and suggest regex improvements. Respond in JSON with keys newAssignments (array) and suggestions (string). Use ISO dates.',
+            },
+            {
+              role: 'user',
+              content: `Course text:\n${text}\n\nExisting assignments:\n${JSON.stringify(currentAssignments)}`,
+            },
+          ],
+          temperature: 0.2,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || `API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const parsed = parseJSONSafe(data.choices[0].message.content) || {
+        newAssignments: [],
+        suggestions: '',
+      };
+
+      updateProgress('verify', `Studiora found ${parsed.newAssignments?.length || 0} additional assignments`);
+
+      return { newAssignments: parsed.newAssignments || [], suggestions: parsed.suggestions || '' };
+    } catch (err) {
+      console.error('[Parser] AI verification error:', err);
+      updateProgress('verify', `AI verification failed: ${err.message}`);
+      return { newAssignments: [], suggestions: '' };
+    }
+  };
+
   const handleParse = async () => {
     setIsLoading(true);
     setError('');
     setProgress([]);
     setParsedAssignments([]);
+    setSuggestions('');
 
     const selectedCourseData = courses.find(c => c.id === selectedCourse);
     
@@ -210,9 +319,30 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
         updateProgress('ai', `Studiora AI enhanced ${aiAssignments.length} assignments`);
       }
 
-      // Step 3: Merge results (prefer AI results if available)
-      const allAssignments = aiAssignments.length > 0 ? aiAssignments : regexAssignments;
+      // Step 3: Merge results from regex and AI, de-duplicating by title and date
+      const merged = new Map();
+      regexAssignments.forEach(a => {
+        const key = `${a.title}|${a.date}`;
+        merged.set(key, a);
+      });
+      aiAssignments.forEach(a => {
+        const key = `${a.title}|${a.date}`;
+        if (!merged.has(key)) merged.set(key, a);
+      });
+      let allAssignments = Array.from(merged.values());
+
+      // Step 4: AI verification to find missing assignments
+      if (apiKey) {
+        const verify = await verifyWithAI(inputText, allAssignments);
+        if (verify.newAssignments.length > 0) {
+          allAssignments = [...allAssignments, ...verify.newAssignments];
+        }
+        if (verify.suggestions) {
+          setSuggestions(verify.suggestions);
+        }
+      }
       
+      allAssignments = normalizeAssignments(allAssignments);
       console.log('[Parser] Final assignments:', allAssignments);
       updateProgress('merge', `Studiora extracted ${allAssignments.length} total assignments`);
       
@@ -400,6 +530,13 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
                   ))}
                 </div>
               </div>
+
+              {suggestions && (
+                <div className="parser-suggestions">
+                  <h4>AI Suggestions</h4>
+                  <p>{suggestions}</p>
+                </div>
+              )}
 
               {/* Course Selection for Import */}
               <div className="form-group">
