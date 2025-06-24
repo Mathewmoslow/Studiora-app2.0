@@ -1,21 +1,34 @@
 import React, { useState } from 'react';
 import { X, Brain, Loader, AlertCircle, CheckCircle } from 'lucide-react';
 
-// Helper to safely parse JSON that may be wrapped in markdown code fences
+// Helper to safely parse JSON that may be wrapped in markdown fences or extra text
 const parseJSONSafe = (text) => {
   if (!text) return null;
   try {
-    // Remove Markdown fences if present
+    // Remove Markdown fences and trim
     const cleaned = text
-      .replace(/^```(?:json)?/i, '')
+      .replace(/^```(?:json)?\s*/i, '')
       .replace(/```$/i, '')
       .trim();
-    // Extract JSON substring between first '{' and last '}'
-    const start = cleaned.indexOf('{');
-    const end = cleaned.lastIndexOf('}');
-    if (start !== -1 && end !== -1) {
-      return JSON.parse(cleaned.substring(start, end + 1));
+
+    // Locate the first opening brace/bracket and the last closing one
+    const firstBrace = cleaned.indexOf('{');
+    const firstBracket = cleaned.indexOf('[');
+    let start = -1;
+    if (firstBrace === -1) {
+      start = firstBracket;
+    } else if (firstBracket === -1) {
+      start = firstBrace;
+    } else {
+      start = Math.min(firstBrace, firstBracket);
     }
+    const lastBrace = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
+
+    if (start !== -1 && lastBrace !== -1) {
+      const jsonString = cleaned.substring(start, lastBrace + 1);
+      return JSON.parse(jsonString);
+    }
+    // Fallback to parsing the whole string
     return JSON.parse(cleaned);
   } catch (err) {
     console.error('[Parser] JSON parse error:', err);
