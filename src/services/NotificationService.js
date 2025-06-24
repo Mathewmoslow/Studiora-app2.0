@@ -38,8 +38,6 @@ class NotificationService {
   showNotification(title, options = {}) {
     if (Notification.permission === 'granted' && this.settings.enabled) {
       const notification = new Notification(title, {
-        icon: '/icon.png',
-        badge: '/badge.png',
         ...options
       });
 

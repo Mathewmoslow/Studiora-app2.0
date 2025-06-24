@@ -38,6 +38,10 @@ function App() {
     return saved ? saved === 'true' : true; // Default to dark
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Detect touch devices to adjust interactions
+  const isTouchDevice =
+    typeof window !== 'undefined' &&
+    ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 
   // Toggle dark mode
   useEffect(() => {
@@ -56,7 +60,13 @@ function App() {
   }, [assignments, studyBlocks]);
   
   // Add hover management
-  const { hoverCard, showHoverCard, hideHoverCard, clearHoverCard } = useEventHover();
+  const {
+    hoverCard,
+    showHoverCard,
+    hideHoverCard,
+    clearHoverCard,
+    cancelHide,
+  } = useEventHover();
 
   // Load saved data or initialize with defaults
   useEffect(() => {
@@ -165,7 +175,8 @@ function App() {
       return {
         id: assignment.id,
         title: `[${course?.code || 'Unknown'}] ${assignment.title}`,
-        date: assignment.date,
+        start: assignment.time ? `${assignment.date}T${assignment.time}` : assignment.date,
+        allDay: !assignment.time,
         backgroundColor: course?.color || '#6b7280',
         borderColor: course?.color || '#6b7280',
         className: assignment.completed ? 'completed' : '',
@@ -249,42 +260,33 @@ function App() {
   // Add hover handlers
   const handleEventMouseEnter = (info) => {
     const rect = info.el.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
     const cardWidth = 320;
-    const cardHeight = 400; // Approximate max height
-    
-    // Determine best position
-    let x, y;
-    const isRightHalf = rect.left > viewportWidth * 0.4; // Trigger earlier for more space
-    
-    if (isRightHalf) {
-      // Far left of the event
-      x = Math.max(10, rect.left - cardWidth - 150);
-    } else {
-      // Right of the event
-      x = rect.right + 30;
+    const cardHeight = 380; // Estimated height
+    const padding = 10;
+
+    // Default to right of the event
+    let x = rect.right + padding;
+    // If card would overflow right edge, position to the left
+    if (x + cardWidth > window.innerWidth - padding) {
+      x = rect.left - cardWidth - padding;
     }
-    
-    // Vertical positioning - prefer above/below if horizontal space is tight
-    y = rect.top;
-    
-    // If card would go off bottom, position above
-    if (y + cardHeight > viewportHeight - 20) {
-      y = Math.max(20, rect.bottom - cardHeight);
+    // Clamp within viewport
+    x = Math.max(padding, Math.min(x, window.innerWidth - cardWidth - padding));
+
+    // Vertically center relative to the event element
+    let y = rect.top + rect.height / 2 - cardHeight / 2;
+    if (y + cardHeight > window.innerHeight - padding) {
+      y = window.innerHeight - cardHeight - padding;
     }
-    
-    // If still issues, position below the event
-    if (isRightHalf && x < 10) {
-      x = Math.max(10, rect.left - 50);
-      y = rect.bottom + 20;
+    if (y < padding) {
+      y = padding;
     }
-    
+
     info.el.setAttribute('data-event-id', info.event.id);
-    
+
     showHoverCard(info.event, {
-      x: x,
-      y: y
+      x,
+      y,
     });
   };
 
@@ -574,7 +576,11 @@ function App() {
           <div className="calendar-wrapper">
             <div className="calendar-header">
               <h2>{selectedCourse === 'all' ? 'All Courses' : courses.find(c => c.id === selectedCourse)?.name || 'Course'} Calendar</h2>
-              <p>Hover over events for details • Click to view/edit • Black blocks are study time</p>
+              <p>
+                {isTouchDevice
+                  ? 'Tap events for details • Black blocks are study time'
+                  : 'Hover over events for details • Click to view/edit • Black blocks are study time'}
+              </p>
             </div>
             <div className="calendar-container">
               <FullCalendar
@@ -588,8 +594,8 @@ function App() {
                 }}
                 events={calendarEvents}
                 eventClick={handleEventClick}
-                eventMouseEnter={handleEventMouseEnter}
-                eventMouseLeave={handleEventMouseLeave}
+                eventMouseEnter={isTouchDevice ? undefined : handleEventMouseEnter}
+                eventMouseLeave={isTouchDevice ? undefined : handleEventMouseLeave}
                 dateClick={handleDateClick}
                 editable={true}
                 selectable={true}
@@ -615,6 +621,8 @@ function App() {
           event={hoverCard.event}
           position={hoverCard.position}
           onClose={clearHoverCard}
+          onMouseEnter={cancelHide}
+          onMouseLeave={hideHoverCard}
           onEdit={(event) => {
             clearHoverCard();
             if (event.extendedProps.isAssignment) {

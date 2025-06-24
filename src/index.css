@@ -750,6 +750,14 @@ body {
   margin-bottom: var(--spacing-sm);
 }
 
+.parser-suggestions {
+  background: var(--bg-tertiary);
+  padding: var(--spacing-md);
+  border-radius: 8px;
+  margin-bottom: var(--spacing-md);
+  font-size: 0.875rem;
+}
+
 .badge {
   padding: 0.25rem 0.5rem;
   border-radius: 6px;
@@ -909,6 +917,44 @@ body {
   
   .calendar-container {
     height: 400px;
+  }
+}
+
+/* Tablet optimizations */
+@media (max-width: 1024px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .main-content {
+    margin-left: 0;
+  }
+
+  .menu-toggle {
+    display: block;
+  }
+
+  .sidebar-overlay.active {
+    display: block;
+  }
+}
+
+/* Small phone optimizations */
+@media (max-width: 480px) {
+  .app-title span {
+    display: none;
+  }
+
+  .btn span {
+    display: none;
+  }
+
+  .calendar-container {
+    height: 350px;
   }
 }
 
