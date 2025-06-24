@@ -2,7 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Clock, MapPin, Calendar, CheckCircle, Edit3, Trash2, BookOpen, AlertCircle } from 'lucide-react';
 
 // Event Hover Card Component
-export function EventHoverCard({ event, position, onClose, onEdit, onDelete }) {
+export function EventHoverCard({
+  event,
+  position,
+  onClose,
+  onEdit,
+  onDelete,
+  onMouseEnter,
+  onMouseLeave,
+}) {
   const cardRef = useRef(null);
   const [adjustedPosition, setAdjustedPosition] = useState(position);
 
@@ -75,6 +83,8 @@ export function EventHoverCard({ event, position, onClose, onEdit, onDelete }) {
     <div
       ref={cardRef}
       className="event-hover-card"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       style={{
         left: `${adjustedPosition.x}px`,
         top: `${adjustedPosition.y}px`,
@@ -209,6 +219,12 @@ export function useEventHover() {
     }, 100); // Small delay to prevent flicker when moving between events
   };
 
+  const cancelHide = () => {
+    if (hoverTimeout.current) {
+      clearTimeout(hoverTimeout.current);
+    }
+  };
+
   const clearHoverCard = () => {
     if (hoverTimeout.current) {
       clearTimeout(hoverTimeout.current);
@@ -216,7 +232,7 @@ export function useEventHover() {
     setHoverCard(null);
   };
 
-  return { hoverCard, showHoverCard, hideHoverCard, clearHoverCard };
+  return { hoverCard, showHoverCard, hideHoverCard, clearHoverCard, cancelHide };
 }
 
 // CSS Styles Component
@@ -232,7 +248,7 @@ export const HoverCardStyles = () => (
       width: 320px;
       animation: fadeIn 0.2s ease-out;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      pointer-events: none; /* Prevent hover card from interfering with mouse events */
+      pointer-events: auto; /* Allow interaction with the hover card */
     }
     
     .event-hover-card * {

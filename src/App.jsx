@@ -60,7 +60,13 @@ function App() {
   }, [assignments, studyBlocks]);
   
   // Add hover management
-  const { hoverCard, showHoverCard, hideHoverCard, clearHoverCard } = useEventHover();
+  const {
+    hoverCard,
+    showHoverCard,
+    hideHoverCard,
+    clearHoverCard,
+    cancelHide,
+  } = useEventHover();
 
   // Load saved data or initialize with defaults
   useEffect(() => {
@@ -614,6 +620,8 @@ function App() {
           event={hoverCard.event}
           position={hoverCard.position}
           onClose={clearHoverCard}
+          onMouseEnter={cancelHide}
+          onMouseLeave={hideHoverCard}
           onEdit={(event) => {
             clearHoverCard();
             if (event.extendedProps.isAssignment) {
