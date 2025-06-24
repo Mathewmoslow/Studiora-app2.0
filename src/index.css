@@ -750,6 +750,14 @@ body {
   margin-bottom: var(--spacing-sm);
 }
 
+.parser-suggestions {
+  background: var(--bg-tertiary);
+  padding: var(--spacing-md);
+  border-radius: 8px;
+  margin-bottom: var(--spacing-md);
+  font-size: 0.875rem;
+}
+
 .badge {
   padding: 0.25rem 0.5rem;
   border-radius: 6px;

@@ -8,6 +8,7 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
   const [error, setError] = useState('');
   const [progress, setProgress] = useState([]);
   const [parsedAssignments, setParsedAssignments] = useState([]);
+  const [suggestions, setSuggestions] = useState('');
   const [step, setStep] = useState(1);
   
   const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
@@ -186,11 +187,59 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
     }
   };
 
+  const verifyWithAI = async (text, currentAssignments) => {
+    if (!apiKey) return { newAssignments: [], suggestions: '' };
+
+    updateProgress('verify', 'Studiora is verifying results...');
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You are a course parser assistant. Given course text and the list of assignments already extracted, identify any additional assignments not in the list and suggest regex improvements. Respond in JSON with keys newAssignments (array) and suggestions (string). Use ISO dates.',
+            },
+            {
+              role: 'user',
+              content: `Course text:\n${text}\n\nExisting assignments:\n${JSON.stringify(currentAssignments)}`,
+            },
+          ],
+          temperature: 0.2,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || `API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const parsed = JSON.parse(data.choices[0].message.content);
+
+      updateProgress('verify', `Studiora found ${parsed.newAssignments?.length || 0} additional assignments`);
+
+      return { newAssignments: parsed.newAssignments || [], suggestions: parsed.suggestions || '' };
+    } catch (err) {
+      console.error('[Parser] AI verification error:', err);
+      updateProgress('verify', `AI verification failed: ${err.message}`);
+      return { newAssignments: [], suggestions: '' };
+    }
+  };
+
   const handleParse = async () => {
     setIsLoading(true);
     setError('');
     setProgress([]);
     setParsedAssignments([]);
+    setSuggestions('');
 
     const selectedCourseData = courses.find(c => c.id === selectedCourse);
     
@@ -211,7 +260,18 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
       }
 
       // Step 3: Merge results (prefer AI results if available)
-      const allAssignments = aiAssignments.length > 0 ? aiAssignments : regexAssignments;
+      let allAssignments = aiAssignments.length > 0 ? aiAssignments : regexAssignments;
+
+      // Step 4: AI verification to find missing assignments
+      if (apiKey) {
+        const verify = await verifyWithAI(inputText, allAssignments);
+        if (verify.newAssignments.length > 0) {
+          allAssignments = [...allAssignments, ...verify.newAssignments];
+        }
+        if (verify.suggestions) {
+          setSuggestions(verify.suggestions);
+        }
+      }
       
       console.log('[Parser] Final assignments:', allAssignments);
       updateProgress('merge', `Studiora extracted ${allAssignments.length} total assignments`);
@@ -400,6 +460,13 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
                   ))}
                 </div>
               </div>
+
+              {suggestions && (
+                <div className="parser-suggestions">
+                  <h4>AI Suggestions</h4>
+                  <p>{suggestions}</p>
+                </div>
+              )}
 
               {/* Course Selection for Import */}
               <div className="form-group">
