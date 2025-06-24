@@ -38,6 +38,10 @@ function App() {
     return saved ? saved === 'true' : true; // Default to dark
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Detect touch devices to adjust interactions
+  const isTouchDevice =
+    typeof window !== 'undefined' &&
+    ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 
   // Toggle dark mode
   useEffect(() => {
@@ -574,7 +578,11 @@ function App() {
           <div className="calendar-wrapper">
             <div className="calendar-header">
               <h2>{selectedCourse === 'all' ? 'All Courses' : courses.find(c => c.id === selectedCourse)?.name || 'Course'} Calendar</h2>
-              <p>Hover over events for details • Click to view/edit • Black blocks are study time</p>
+              <p>
+                {isTouchDevice
+                  ? 'Tap events for details • Black blocks are study time'
+                  : 'Hover over events for details • Click to view/edit • Black blocks are study time'}
+              </p>
             </div>
             <div className="calendar-container">
               <FullCalendar
@@ -588,8 +596,8 @@ function App() {
                 }}
                 events={calendarEvents}
                 eventClick={handleEventClick}
-                eventMouseEnter={handleEventMouseEnter}
-                eventMouseLeave={handleEventMouseLeave}
+                eventMouseEnter={isTouchDevice ? undefined : handleEventMouseEnter}
+                eventMouseLeave={isTouchDevice ? undefined : handleEventMouseLeave}
                 dateClick={handleDateClick}
                 editable={true}
                 selectable={true}

@@ -912,6 +912,44 @@ body {
   }
 }
 
+/* Tablet optimizations */
+@media (max-width: 1024px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .main-content {
+    margin-left: 0;
+  }
+
+  .menu-toggle {
+    display: block;
+  }
+
+  .sidebar-overlay.active {
+    display: block;
+  }
+}
+
+/* Small phone optimizations */
+@media (max-width: 480px) {
+  .app-title span {
+    display: none;
+  }
+
+  .btn span {
+    display: none;
+  }
+
+  .calendar-container {
+    height: 350px;
+  }
+}
+
 /* CSS Variables for Theming */
 :root {
   /* Light Mode Colors */
