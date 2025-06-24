@@ -1,6 +1,28 @@
 import React, { useState } from 'react';
 import { X, Brain, Loader, AlertCircle, CheckCircle } from 'lucide-react';
 
+// Helper to safely parse JSON that may be wrapped in markdown code fences
+const parseJSONSafe = (text) => {
+  if (!text) return null;
+  try {
+    // Remove Markdown fences if present
+    const cleaned = text
+      .replace(/^```(?:json)?/i, '')
+      .replace(/```$/i, '')
+      .trim();
+    // Extract JSON substring between first '{' and last '}'
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start !== -1 && end !== -1) {
+      return JSON.parse(cleaned.substring(start, end + 1));
+    }
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.error('[Parser] JSON parse error:', err);
+    return null;
+  }
+};
+
 function ParserModal({ isOpen, onClose, onComplete, courses }) {
   const [inputText, setInputText] = useState('');
   const [selectedCourse, setSelectedCourse] = useState(courses[0]?.id || '');
@@ -166,7 +188,7 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
       });
       
       const content = data.choices[0].message.content;
-      const parsed = JSON.parse(content);
+      const parsed = parseJSONSafe(content) || { assignments: [], events: [] };
       console.log('[Parser] Studiora extracted assignments:', parsed);
       
       updateProgress('ai', `Studiora found ${parsed.assignments?.length || 0} assignments (Cost: $${actualCost.toFixed(4)})`);
@@ -222,7 +244,10 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
       }
 
       const data = await response.json();
-      const parsed = JSON.parse(data.choices[0].message.content);
+      const parsed = parseJSONSafe(data.choices[0].message.content) || {
+        newAssignments: [],
+        suggestions: '',
+      };
 
       updateProgress('verify', `Studiora found ${parsed.newAssignments?.length || 0} additional assignments`);
 
