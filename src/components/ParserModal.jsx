@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Brain, Loader, AlertCircle, CheckCircle } from 'lucide-react';
+import parseAIResponse from '../utils/aiResponseFormatter';
 
 function ParserModal({ isOpen, onClose, onComplete, courses }) {
   const [inputText, setInputText] = useState('');
@@ -165,7 +166,7 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
       });
       
       const content = data.choices[0].message.content;
-      const parsed = JSON.parse(content);
+      const parsed = parseAIResponse(content);
       console.log('[Parser] Studiora extracted assignments:', parsed);
       
       updateProgress('ai', `Studiora found ${parsed.assignments?.length || 0} assignments (Cost: $${actualCost.toFixed(4)})`);
