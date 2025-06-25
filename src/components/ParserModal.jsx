@@ -1,40 +1,6 @@
 import React, { useState } from 'react';
 import { X, Brain, Loader, AlertCircle, CheckCircle } from 'lucide-react';
-
-// Helper to safely parse JSON that may be wrapped in markdown fences or extra text
-const parseJSONSafe = (text) => {
-  if (!text) return null;
-  try {
-    // Remove Markdown fences and trim
-    const cleaned = text
-      .replace(/^```(?:json)?\s*/i, '')
-      .replace(/```$/i, '')
-      .trim();
-
-    // Locate the first opening brace/bracket and the last closing one
-    const firstBrace = cleaned.indexOf('{');
-    const firstBracket = cleaned.indexOf('[');
-    let start = -1;
-    if (firstBrace === -1) {
-      start = firstBracket;
-    } else if (firstBracket === -1) {
-      start = firstBrace;
-    } else {
-      start = Math.min(firstBrace, firstBracket);
-    }
-    const lastBrace = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
-
-    if (start !== -1 && lastBrace !== -1) {
-      const jsonString = cleaned.substring(start, lastBrace + 1);
-      return JSON.parse(jsonString);
-    }
-    // Fallback to parsing the whole string
-    return JSON.parse(cleaned);
-  } catch (err) {
-    console.error('[Parser] JSON parse error:', err);
-    return null;
-  }
-};
+import { sanitizeAndParseStudioraResponse } from '../utils/sanitizeStudioraResponse';
 
 function ParserModal({ isOpen, onClose, onComplete, courses }) {
   const [inputText, setInputText] = useState('');
@@ -223,7 +189,8 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
       });
       
       const content = data.choices[0].message.content;
-      const parsed = parseJSONSafe(content) || { assignments: [], events: [] };
+      const parsed =
+        sanitizeAndParseStudioraResponse(content) || { assignments: [], events: [] };
       console.log('[Parser] Studiora extracted assignments:', parsed);
       
       updateProgress('ai', `Studiora found ${parsed.assignments?.length || 0} assignments (Cost: $${actualCost.toFixed(4)})`);
@@ -279,7 +246,9 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
       }
 
       const data = await response.json();
-      const parsed = parseJSONSafe(data.choices[0].message.content) || {
+      const parsed = sanitizeAndParseStudioraResponse(
+        data.choices[0].message.content
+      ) || {
         newAssignments: [],
         suggestions: '',
       };
