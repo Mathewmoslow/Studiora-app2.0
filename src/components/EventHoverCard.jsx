@@ -6,22 +6,14 @@ export function EventHoverCard({ event, position, onClose, onEdit, onDelete }) {
   const cardRef = useRef(null);
   const [adjustedPosition, setAdjustedPosition] = useState(position);
 
-  useEffect(() => {
+useEffect(() => {
     if (cardRef.current) {
       const rect = cardRef.current.getBoundingClientRect();
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
       
-      let newX = position.x;
-      let newY = position.y;
-
-      // Adjust if card goes off screen
-      if (position.x + rect.width > viewportWidth) {
-        newX = position.x - rect.width - 10;
-      }
-      if (position.y + rect.height > viewportHeight) {
-        newY = viewportHeight - rect.height - 20;
-      }
+      // Bottom right corner of card should be 20px left and 20px up from cursor
+      // So card top-left = cursor - cardWidth - 20, cursor - cardHeight - 20
+      const newX = position.x - 1;
+      const newY = position.y - 1;
 
       setAdjustedPosition({ x: newX, y: newY });
     }
@@ -39,12 +31,12 @@ export function EventHoverCard({ event, position, onClose, onEdit, onDelete }) {
     setTimeout(() => {
       document.addEventListener('mousedown', handleClickOutside);
     }, 100);
-    
+
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
   const getEventTypeIcon = (type) => {
-    switch(type) {
+    switch (type) {
       case 'quiz': return '📝';
       case 'exam': return '📚';
       case 'assignment': return '✏️';
@@ -57,7 +49,7 @@ export function EventHoverCard({ event, position, onClose, onEdit, onDelete }) {
   };
 
   const getPriorityColor = (priority) => {
-    switch(priority) {
+    switch (priority) {
       case 'high': return 'text-red-600';
       case 'medium': return 'text-yellow-600';
       case 'low': return 'text-green-600';
@@ -66,11 +58,11 @@ export function EventHoverCard({ event, position, onClose, onEdit, onDelete }) {
   };
 
   return (
-    <div 
+    <div
       ref={cardRef}
       className="event-hover-card"
-      style={{ 
-        left: `${adjustedPosition.x}px`, 
+      style={{
+        left: `${adjustedPosition.x}px`,
         top: `${adjustedPosition.y}px`,
       }}
     >
@@ -93,7 +85,7 @@ export function EventHoverCard({ event, position, onClose, onEdit, onDelete }) {
         {/* Date and Time */}
         <div className="hover-card-detail">
           <Calendar size={14} />
-          <span>{new Date(event.start).toLocaleDateString('en-US', { 
+          <span>{new Date(event.start).toLocaleDateString('en-US', {
             weekday: 'short',
             month: 'short',
             day: 'numeric'
@@ -103,7 +95,7 @@ export function EventHoverCard({ event, position, onClose, onEdit, onDelete }) {
         {event.start && !event.allDay && (
           <div className="hover-card-detail">
             <Clock size={14} />
-            <span>{new Date(event.start).toLocaleTimeString('en-US', { 
+            <span>{new Date(event.start).toLocaleTimeString('en-US', {
               hour: 'numeric',
               minute: '2-digit',
               hour12: true
@@ -148,15 +140,15 @@ export function EventHoverCard({ event, position, onClose, onEdit, onDelete }) {
         {(event.extendedProps.type === 'study' || event.extendedProps.type === 'review') && (
           <div className="hover-card-study-info">
             <p className="text-sm text-gray-600">
-              {event.extendedProps.type === 'review' ? 'Review session' : 'Study block'} 
+              {event.extendedProps.type === 'review' ? 'Review session' : 'Study block'}
               {event.extendedProps.assignmentTitle && ` for ${event.extendedProps.assignmentTitle}`}
             </p>
           </div>
         )}
       </div>
 
-      {/* Action Buttons */}
-      {event.extendedProps.isAssignment && (
+      {/* Action Buttons - Show for assignments AND study blocks */}
+      {(event.extendedProps.isAssignment || event.extendedProps.type === 'study' || event.extendedProps.type === 'review') && (
         <div className="hover-card-actions">
           <button
             onClick={() => onEdit(event)}
@@ -167,7 +159,7 @@ export function EventHoverCard({ event, position, onClose, onEdit, onDelete }) {
           </button>
           <button
             onClick={() => {
-              if (confirm('Delete this assignment?')) {
+              if (confirm(`Delete this ${event.extendedProps.type || 'item'}?`)) {
                 onDelete(event.id);
               }
             }}
@@ -218,7 +210,7 @@ export const HoverCardStyles = () => (
   <style>{`
     .event-hover-card {
       position: fixed;
-      z-index: 1000;
+      z-index: 9999;
       background: white;
       border-radius: 12px;
       box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1), 0 6px 12px rgba(0, 0, 0, 0.08);
@@ -226,6 +218,16 @@ export const HoverCardStyles = () => (
       width: 320px;
       animation: fadeIn 0.2s ease-out;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      pointer-events: none; /* Prevent hover card from interfering with mouse events */
+    }
+    
+    .event-hover-card * {
+      pointer-events: auto; /* Re-enable for interactive elements */
+    }
+    
+    /* Ensure hover card is above everything */
+    .fc-popover {
+      z-index: 9998 !important;
     }
 
     @keyframes fadeIn {
@@ -371,6 +373,45 @@ export const HoverCardStyles = () => (
       background-color: #7c3aed !important;
       border-color: #7c3aed !important;
       color: white !important;
+    }
+
+    /* Dark mode support */
+    [data-theme="dark"] .event-hover-card {
+      background: var(--bg-secondary);
+      border-color: var(--border-color);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    }
+
+    [data-theme="dark"] .hover-card-header {
+      border-bottom-color: var(--border-color);
+    }
+
+    [data-theme="dark"] .hover-card-title {
+      color: var(--text-primary);
+    }
+
+    [data-theme="dark"] .hover-card-close {
+      color: var(--text-secondary);
+    }
+
+    [data-theme="dark"] .hover-card-close:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    [data-theme="dark"] .hover-card-detail {
+      color: var(--text-secondary);
+    }
+
+    [data-theme="dark"] .hover-card-description,
+    [data-theme="dark"] .hover-card-study-info {
+      background: var(--bg-tertiary);
+      border-color: var(--border-color);
+      color: var(--text-secondary);
+    }
+
+    [data-theme="dark"] .hover-card-actions {
+      border-top-color: var(--border-color);
     }
 
     /* Responsive adjustments */
