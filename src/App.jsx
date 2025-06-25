@@ -175,7 +175,8 @@ function App() {
       return {
         id: assignment.id,
         title: `[${course?.code || 'Unknown'}] ${assignment.title}`,
-        date: assignment.date,
+        start: assignment.time ? `${assignment.date}T${assignment.time}` : assignment.date,
+        allDay: !assignment.time,
         backgroundColor: course?.color || '#6b7280',
         borderColor: course?.color || '#6b7280',
         className: assignment.completed ? 'completed' : '',
