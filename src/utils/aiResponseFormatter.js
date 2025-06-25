@@ -45,5 +45,13 @@ export default function parseAIResponse(content) {
     jsonString = jsonString.slice(0, end + 1);
   }
 
-  return JSON.parse(jsonString);
+  // Remove trailing commas which commonly break JSON parsing
+  jsonString = jsonString.replace(/,\s*(?=[}\]])/g, '');
+
+  try {
+    return JSON.parse(jsonString);
+  } catch (err) {
+    console.error('[AI Formatter] Failed to parse JSON:', err, jsonString);
+    throw err;
+  }
 }

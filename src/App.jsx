@@ -14,6 +14,7 @@ import StudySchedulerModal from './components/StudySchedulerModal'
 import ParserModal from './components/ParserModal'
 import { EventHoverCard, useEventHover, HoverCardStyles } from './components/EventHoverCard'
 import NotificationService from './services/NotificationService'
+import formatForScheduler from './utils/schedulerDataFormatter'
 
 function App() {
   const [assignments, setAssignments] = useState([])
@@ -381,13 +382,7 @@ function App() {
 
   // Handle parser import - FIXED
   const handleParserImport = (courseId, parsedAssignments) => {
-    // Generate unique IDs for each assignment
-    const newAssignments = parsedAssignments.map(assignment => ({
-      ...assignment,
-      id: `assign_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      courseId: courseId,
-      completed: false
-    }));
+    const newAssignments = formatForScheduler(parsedAssignments, courseId);
     
     setAssignments([...assignments, ...newAssignments]);
     setCalendarKey(prev => prev + 1);
