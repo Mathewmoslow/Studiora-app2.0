@@ -245,13 +245,17 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
         throw new Error(errorData.error?.message || `API error: ${response.status}`);
       }
 
-      const data = await response.json();
-      const parsed = sanitizeAndParseStudioraResponse(
-        data.choices[0].message.content
-      ) || {
-        newAssignments: [],
-        suggestions: '',
-      };
+       const data = await response.json();
+
+      let parsed;
+      try {
+        parsed = JSON.parse(data.choices[0].message.content);
+      } catch (jsonErr) {
+        parsed = sanitizeAndParseStudioraResponse(data.choices[0].message.content) || {
+          newAssignments: [],
+          suggestions: '',
+        };
+      }
 
       updateProgress('verify', `Studiora found ${parsed.newAssignments?.length || 0} additional assignments`);
 
@@ -288,16 +292,19 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
         updateProgress('ai', `Studiora AI enhanced ${aiAssignments.length} assignments`);
       }
 
-      // Step 3: Merge results from regex and AI, de-duplicating by title and date
+      // Step 3: Merge results from regex and AI, preferring AI but including unique regex results
       const merged = new Map();
-      regexAssignments.forEach(a => {
+
+      aiAssignments.forEach(a => {
         const key = `${a.title}|${a.date}`;
         merged.set(key, a);
       });
-      aiAssignments.forEach(a => {
+
+      regexAssignments.forEach(a => {
         const key = `${a.title}|${a.date}`;
         if (!merged.has(key)) merged.set(key, a);
       });
+
       let allAssignments = Array.from(merged.values());
 
       // Step 4: AI verification to find missing assignments
@@ -334,25 +341,7 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
       setIsLoading(false);
     }
   };
-
-  const handleAssignToCourse = () => {
-    if (selectedCourse && parsedAssignments.length > 0) {
-      console.log('[Parser] Assigning', parsedAssignments.length, 'assignments to course:', selectedCourse);
-      onComplete(selectedCourse, parsedAssignments);
-      onClose();
-    }
-  };
-
-  const handleClose = () => {
-    if (step === 2 && parsedAssignments.length > 0) {
-      if (confirm('Are you sure? You will lose the parsed assignments.')) {
-        onClose();
-      }
-    } else {
-      onClose();
-    }
-  };
-
+  
   return (
     <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
       <div className="modal-content parser-modal" onClick={e => e.stopPropagation()}>
