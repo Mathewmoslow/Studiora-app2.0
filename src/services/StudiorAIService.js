@@ -1,14 +1,19 @@
 // src/services/StudiorAIService.js
 // Enhanced AI service with systematic extraction prompt - FIXED RESPONSE PARSING
+import OpenAI from 'openai';
 
 export class StudiorAIService {
   constructor(apiKey, options = {}) {
     this.apiKey = apiKey;
     this.primaryModel = options.model || 'gpt-4o';
     this.fallbackModel = 'gpt-3.5-turbo';
-    this.baseURL = 'https://api.openai.com/v1';
     this.timeout = 90000;
     this.maxRetries = 3;
+
+    this.openai = new OpenAI({
+      apiKey: this.apiKey,
+      dangerouslyAllowBrowser: true
+    });
 
     console.log(`🤖 StudiorAIService initialized: ${this.primaryModel}`);
     console.log('🔑 API Key available:', !!this.apiKey);
@@ -109,38 +114,23 @@ DO NOT add commentary or formatting. Provide ONLY the JSON response:
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
-        const response = await fetch(`${this.baseURL}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: modelName,
-            messages: [
-              {
-                role: 'system',
-                content: 'You are an expert educational content parser specializing in systematic extraction. Extract EVERY actionable item students must complete. Be exhaustive and systematic. Return only valid JSON.'
-              },
-              {
-                role: 'user',
-                content: prompt
-              }
-            ],
-            temperature,
-            max_tokens: 4000
-          }),
+        const completion = await this.openai.chat.completions.create({
+          model: modelName,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert educational content parser specializing in systematic extraction. Extract EVERY actionable item students must complete. Be exhaustive and systematic. Return only valid JSON.'
+            },
+            { role: 'user', content: prompt }
+          ],
+          temperature,
+          max_tokens: 4000,
           signal: controller.signal
         });
 
         clearTimeout(timeoutId);
 
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({}));
-          throw new Error(`API error ${response.status}: ${error.error?.message || 'Unknown error'}`);
-        }
-
-        const content = await this.parseWithTimeout(response, 15000);
+        const content = completion.choices[0]?.message?.content;
 
         if (!content) throw new Error('No content in API response');
         return this.parseJSON(content);
@@ -153,32 +143,7 @@ DO NOT add commentary or formatting. Provide ONLY the JSON response:
     }
   }
 
-  // FIXED: Handle both Chat Completions and Prompt Management API responses
-  async parseWithTimeout(response, ms) {
-    const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('JSON parsing timed out')), ms)
-    );
-    
-    const result = await Promise.race([response.json(), timeout]);
-    
-    // Handle different OpenAI API response formats
-    if (result.choices && result.choices[0] && result.choices[0].message) {
-      // Standard Chat Completions API format
-      return result.choices[0].message.content;
-    } else if (result.output_text) {
-      // OpenAI Prompt Management API format
-      return result.output_text;
-    } else if (result.output_parsed) {
-      // OpenAI Prompt Management API with parsed output
-      return JSON.stringify(result.output_parsed);
-    } else if (result.output && Array.isArray(result.output) && result.output[0]) {
-      // Alternative Prompt Management format
-      return result.output[0].text || result.output[0].content;
-    } else {
-      console.error('🚨 Unknown API response format:', result);
-      throw new Error('Unknown API response format - unable to extract content');
-    }
-  }
+  // No longer needed: parsing handled directly from OpenAI client response
 
   parseJSON(content) {
     const cleaned = content
