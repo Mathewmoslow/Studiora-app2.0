@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Brain, Loader, AlertCircle, CheckCircle } from 'lucide-react';
-import parseAIResponse from '../utils/aiResponseFormatter';
+import { parseWithPrompt } from '../services/OpenAIParser';
 
 function ParserModal({ isOpen, onClose, onComplete, courses }) {
   const [inputText, setInputText] = useState('');
@@ -99,7 +99,7 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
     return 2;
   };
 
-  const parseWithAI = async (text, courseName) => {
+  const parseWithAI = async (text) => {
     console.log('[Parser] Starting Studiora AI parsing with API key:', apiKey ? 'Present' : 'Missing');
     
     if (!apiKey) {
@@ -110,73 +110,21 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
     updateProgress('ai', 'Studiora is analyzing your content...');
 
     try {
-      // Estimate tokens (rough estimate: ~4 chars per token)
-      const inputTokens = Math.ceil((text.length + 200) / 4); // 200 chars for system prompt
-      const estimatedOutputTokens = 500; // typical response size
-      const totalTokens = inputTokens + estimatedOutputTokens;
-      const costEstimate = (totalTokens / 1000) * 0.002; // GPT-3.5-turbo pricing: $0.002 per 1K tokens
-      
-      console.log('[Parser] Token estimate:', { inputTokens, estimatedOutputTokens, totalTokens, costEstimate: `$${costEstimate.toFixed(4)}` });
-
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-3.5-turbo',
-          messages: [
-            {
-              role: 'system',
-              content: `Extract assignments and events from course content. Return JSON with arrays:
-                - assignments: [{title, date, type, hours, description}]
-                - events: [{title, date, type, hours, location}]
-                Use ISO date format (YYYY-MM-DD). Types: reading, quiz, assignment, project, exam, discussion, paper, presentation, lab, clinical.`
-            },
-            {
-              role: 'user',
-              content: `Course: ${courseName}\n\nContent:\n${text}`
-            }
-          ],
-          temperature: 0.3
-        })
-      });
-
-      console.log('[Parser] Studiora AI Response status:', response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('[Parser] Studiora AI Error:', errorData);
-        throw new Error(errorData.error?.message || `API error: ${response.status}`);
-      }
-
-      const data = await response.json();
+      const data = await parseWithPrompt(apiKey, text);
       console.log('[Parser] Studiora AI response:', data);
-      
-      // Extract actual token usage
-      const usage = data.usage;
-      const actualCost = ((usage?.total_tokens || totalTokens) / 1000) * 0.002;
-      
-      console.log('[Parser] Actual token usage:', {
-        prompt_tokens: usage?.prompt_tokens,
-        completion_tokens: usage?.completion_tokens,
-        total_tokens: usage?.total_tokens,
-        actual_cost: `$${actualCost.toFixed(4)}`
-      });
-      
-      const content = data.choices[0].message.content;
-      const parsed = parseAIResponse(content);
-      console.log('[Parser] Studiora extracted assignments:', parsed);
-      
+
+      const parsed = data.output_parsed || {};
+      const usage = data.usage || {};
+      const actualCost = usage.total_tokens ? (usage.total_tokens / 1000) * 0.002 : 0;
+
       updateProgress('ai', `Studiora found ${parsed.assignments?.length || 0} assignments (Cost: $${actualCost.toFixed(4)})`);
-      
+
       return {
         ...parsed,
         tokenUsage: {
-          prompt_tokens: usage?.prompt_tokens || inputTokens,
-          completion_tokens: usage?.completion_tokens || estimatedOutputTokens,
-          total_tokens: usage?.total_tokens || totalTokens,
+          prompt_tokens: usage.input_tokens || 0,
+          completion_tokens: usage.output_tokens || 0,
+          total_tokens: usage.total_tokens || 0,
           cost: actualCost
         }
       };
@@ -205,7 +153,7 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
       let aiAssignments = [];
       let tokenUsage = null;
       if (apiKey) {
-        const aiResult = await parseWithAI(inputText, selectedCourseData?.name || 'Course');
+        const aiResult = await parseWithAI(inputText);
         aiAssignments = aiResult.assignments || [];
         tokenUsage = aiResult.tokenUsage;
         updateProgress('ai', `Studiora AI enhanced ${aiAssignments.length} assignments`);
