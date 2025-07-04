@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Brain, Loader, AlertCircle, CheckCircle } from 'lucide-react';
+import OpenAI from 'openai';
 import parseAIResponse from '../utils/aiResponseFormatter';
 
 function ParserModal({ isOpen, onClose, onComplete, courses }) {
@@ -24,84 +25,10 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
     }]);
   };
 
-  const parseWithRegex = (text) => {
-    console.log('[Parser] Starting regex parsing...');
-    const assignments = [];
-    
-    // Pattern for dates
-    const datePattern = /(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?/gi;
-    
-    // Pattern for assignment keywords
-    const assignmentPattern = /(?:assignment|homework|quiz|test|exam|project|paper|essay|lab|discussion|reading|chapter|module|week\s*\d+|presentation|midterm|final)/gi;
-    
-    const lines = text.split('\n');
-    
-    lines.forEach((line, index) => {
-      if (assignmentPattern.test(line)) {
-        const dates = line.match(datePattern);
-        const title = line.trim().substring(0, 100);
-        
-        if (title.length > 10) {
-          const assignment = {
-            title: title,
-            date: dates ? parseDate(dates[0]) : null,
-            type: detectAssignmentType(line),
-            hours: estimateHours(line),
-            description: ''
-          };
-          assignments.push(assignment);
-          console.log(`[Regex Parser] Line ${index + 1}: "${line.trim()}"`);
-          console.log(`[Regex Parser] → Extracted:`, assignment);
-        }
-      }
-    });
-    
-    console.log(`[Parser] Regex parsing complete. Found ${assignments.length} assignments`);
-    console.log('[Parser] Full regex results:', assignments);
-    return assignments;
-  };
-
-  const parseDate = (dateStr) => {
-    const date = new Date(dateStr);
-    if (!isNaN(date.getTime())) {
-      return date.toISOString().split('T')[0];
-    }
-    
-    // Try to parse current year
-    const currentYear = new Date().getFullYear();
-    const dateWithYear = new Date(`${dateStr}, ${currentYear}`);
-    if (!isNaN(dateWithYear.getTime())) {
-      return dateWithYear.toISOString().split('T')[0];
-    }
-    
-    return null;
-  };
-
-  const detectAssignmentType = (text) => {
-    const lower = text.toLowerCase();
-    if (lower.includes('quiz')) return 'quiz';
-    if (lower.includes('exam') || lower.includes('test')) return 'exam';
-    if (lower.includes('project')) return 'project';
-    if (lower.includes('paper') || lower.includes('essay')) return 'paper';
-    if (lower.includes('discussion')) return 'discussion';
-    if (lower.includes('lab')) return 'lab';
-    if (lower.includes('presentation')) return 'presentation';
-    if (lower.includes('reading') || lower.includes('chapter')) return 'reading';
-    return 'assignment';
-  };
-
-  const estimateHours = (text) => {
-    const lower = text.toLowerCase();
-    if (lower.includes('exam') || lower.includes('midterm') || lower.includes('final')) return 3;
-    if (lower.includes('quiz')) return 1;
-    if (lower.includes('project') || lower.includes('paper')) return 5;
-    if (lower.includes('reading') || lower.includes('chapter')) return 2;
-    return 2;
-  };
 
   const parseWithAI = async (text, courseName) => {
     console.log('[Parser] Starting Studiora AI parsing with API key:', apiKey ? 'Present' : 'Missing');
-    
+
     if (!apiKey) {
       console.log('[Parser] No API key found in environment, skipping Studiora AI parsing');
       return { assignments: [], events: [], tokenUsage: null };
@@ -110,75 +37,29 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
     updateProgress('ai', 'Studiora is analyzing your content...');
 
     try {
-      // Estimate tokens (rough estimate: ~4 chars per token)
-      const inputTokens = Math.ceil((text.length + 200) / 4); // 200 chars for system prompt
-      const estimatedOutputTokens = 500; // typical response size
-      const totalTokens = inputTokens + estimatedOutputTokens;
-      const costEstimate = (totalTokens / 1000) * 0.002; // GPT-3.5-turbo pricing: $0.002 per 1K tokens
-      
-      console.log('[Parser] Token estimate:', { inputTokens, estimatedOutputTokens, totalTokens, costEstimate: `$${costEstimate.toFixed(4)}` });
+      const client = new OpenAI({ apiKey });
 
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+      const response = await client.responses.create({
+        prompt: {
+          id: 'pmpt_6867fd7d55408195837431a01c6d01aa0df59ec7a5e95a0b',
+          version: '2',
+          variables: {
+            course: courseName,
+            content: text,
+          },
         },
-        body: JSON.stringify({
-          model: 'gpt-3.5-turbo',
-          messages: [
-            {
-              role: 'system',
-              content: `Extract assignments and events from course content. Return JSON with arrays:
-                - assignments: [{title, date, type, hours, description}]
-                - events: [{title, date, type, hours, location}]
-                Use ISO date format (YYYY-MM-DD). Types: reading, quiz, assignment, project, exam, discussion, paper, presentation, lab, clinical.`
-            },
-            {
-              role: 'user',
-              content: `Course: ${courseName}\n\nContent:\n${text}`
-            }
-          ],
-          temperature: 0.3
-        })
+        text: { format: { type: 'json_object' } },
       });
 
-      console.log('[Parser] Studiora AI Response status:', response.status);
+      const usage = response.usage || {};
+      const cost = usage.total_tokens ? (usage.total_tokens / 1000) * 0.002 : 0;
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('[Parser] Studiora AI Error:', errorData);
-        throw new Error(errorData.error?.message || `API error: ${response.status}`);
-      }
+      const parsed = parseAIResponse(response.output_text);
+      updateProgress('ai', `Studiora found ${(parsed.assignments || []).length} assignments (Cost: $${cost.toFixed(4)})`);
 
-      const data = await response.json();
-      console.log('[Parser] Studiora AI response:', data);
-      
-      // Extract actual token usage
-      const usage = data.usage;
-      const actualCost = ((usage?.total_tokens || totalTokens) / 1000) * 0.002;
-      
-      console.log('[Parser] Actual token usage:', {
-        prompt_tokens: usage?.prompt_tokens,
-        completion_tokens: usage?.completion_tokens,
-        total_tokens: usage?.total_tokens,
-        actual_cost: `$${actualCost.toFixed(4)}`
-      });
-      
-      const content = data.choices[0].message.content;
-      const parsed = parseAIResponse(content);
-      console.log('[Parser] Studiora extracted assignments:', parsed);
-      
-      updateProgress('ai', `Studiora found ${parsed.assignments?.length || 0} assignments (Cost: $${actualCost.toFixed(4)})`);
-      
       return {
         ...parsed,
-        tokenUsage: {
-          prompt_tokens: usage?.prompt_tokens || inputTokens,
-          completion_tokens: usage?.completion_tokens || estimatedOutputTokens,
-          total_tokens: usage?.total_tokens || totalTokens,
-          cost: actualCost
-        }
+        tokenUsage: { ...usage, cost },
       };
     } catch (err) {
       console.error('[Parser] Studiora AI parsing error:', err);
@@ -196,23 +77,11 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
     const selectedCourseData = courses.find(c => c.id === selectedCourse);
     
     try {
-      // Step 1: Regex parsing
-      updateProgress('regex', 'Studiora is scanning for assignments...');
-      const regexAssignments = parseWithRegex(inputText);
-      updateProgress('regex', `Studiora found ${regexAssignments.length} potential assignments`);
+      const aiResult = await parseWithAI(inputText, selectedCourseData?.name || 'Course');
+      const allAssignments = aiResult.assignments || [];
+      const tokenUsage = aiResult.tokenUsage;
 
-      // Step 2: AI enhancement (if API key exists)
-      let aiAssignments = [];
-      let tokenUsage = null;
-      if (apiKey) {
-        const aiResult = await parseWithAI(inputText, selectedCourseData?.name || 'Course');
-        aiAssignments = aiResult.assignments || [];
-        tokenUsage = aiResult.tokenUsage;
-        updateProgress('ai', `Studiora AI enhanced ${aiAssignments.length} assignments`);
-      }
-
-      // Step 3: Merge results (prefer AI results if available)
-      const allAssignments = aiAssignments.length > 0 ? aiAssignments : regexAssignments;
+      updateProgress('ai', `Studiora extracted ${allAssignments.length} assignments`);
       
       console.log('[Parser] Final assignments:', allAssignments);
       updateProgress('merge', `Studiora extracted ${allAssignments.length} total assignments`);
@@ -349,8 +218,7 @@ function ParserModal({ isOpen, onClose, onComplete, courses }) {
                   <AlertCircle size={16} />
                   <div>
                     <strong>No API Key Found</strong><br />
-                    AI enhancement will be skipped. Only regex parsing will be used.
-                    Set VITE_OPENAI_API_KEY in your .env file for better results.
+                    Parsing requires an OpenAI API key. Set VITE_OPENAI_API_KEY in your .env file.
                   </div>
                 </div>
               )}
